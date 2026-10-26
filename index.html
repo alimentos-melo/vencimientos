@@ -372,7 +372,7 @@ $('#fMail').onkeydown = e => { if (e.key==='Enter'){ e.preventDefault(); $('#log
 /* La sucursal se recuerda por nombre (los datos se actualizan a diario y su posición en la lista puede cambiar) */
 if (cfg.sn){ const k = D.s.findIndex(x => x[2]===cfg.sn); cfg.s = k >= 0 ? k : -1; } else if (D.s[cfg.s]) { cfg.sn = D.s[cfg.s][2]; store.set('venc-cfg', cfg); }
 let all = [], items = [], done = {}, fEstado = 'pend', fSec = '', shown = 60, fMarca = null;
-const SEM = `${NOW.getFullYear()}-${String(NOW.getMonth() + 1).padStart(2, '0')}`;   /* periodo mensual, ej. 2026-10 */
+const SEM = `${NOW.getFullYear()}-M${String(NOW.getMonth() + 1).padStart(2, '0')}`;   /* periodo mensual, ej. 2026-M10 (texto: Sheets no lo convierte en fecha) */
 const doneKey = () => `venc-done3-${cfg.sn}-${SEM}`;
 const RC_DIAS = 7;   /* un crítico se vuelve a contar si su último conteo tiene más de 7 días */
 const esCrit = l => (l || []).some(x => daysTo(Array.isArray(x) ? x[1] : x.d) <= 30);
