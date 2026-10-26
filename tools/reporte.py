@@ -18,7 +18,8 @@ page = open(app, encoding='utf-8').read()
 D = json.JSONDecoder().raw_decode(page[page.index('const D = ') + 10:])[0]
 datos = json.load(open(src, encoding='utf-8')) if src != '-' else {'cierre': (dt.date.today() - dt.timedelta(days=1)).isoformat(), 'filas': [], 'avance': {}}
 cierre = dt.date.fromisoformat(datos['cierre']); hoy = cierre + dt.timedelta(days=1)
-iy, iw, _ = cierre.isocalendar(); semana = f'{iy}-S{iw:02d}'
+MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
+mes = f'{cierre.year}-M{cierre.month:02d}'; mes_txt = MESES[cierre.month - 1]   # periodo mensual del aplicativo (texto, ej. 2026-M10)
 corto = lambda s: re.sub(r'^[^|]+\| ', '', s)
 
 # Último reporte por sucursal + código (todas sus filas con la misma marca de tiempo)
@@ -45,8 +46,9 @@ for (suc, cod), fs in grupos.items():
 def accion(l):
   if l['u'] == 0: return 'Ya no hay unidades (vendido o retirado)'
   if l['dias'] < 0: return 'Retirar del anaquel y registrar merma'
-  if l['edad'] > 7: return 'Recontar (conteo de hace más de 7 días)'
+  if l['dias'] <= 30 and l['edad'] > 7: return 'Recontar (crítico, conteo de hace más de 7 días)'
   if l['dias'] <= 30: return 'Vender con prioridad'
+  if (l['reg'].year, l['reg'].month) != (cierre.year, cierre.month): return 'Recontar este mes'
   return 'Seguimiento'
 estado = lambda d: 'Vencido' if d < 0 else 'Crítico ≤30' if d <= 30 else 'Alto 31–60' if d <= 60 else 'Medio 61+'
 
@@ -60,7 +62,7 @@ def libro(dst):
   # ---------- Detalle
   ws = wb.active; ws.title = 'Detalle'
   ws['A1'] = f"Vencimientos en tienda · {dst['nombre']} · cierre al {cierre:%d/%m/%Y}"; ws['A1'].font = Font(name=FONT, bold=True, size=13)
-  ws['A2'] = f"Último conteo de cada producto por sucursal (últimos 35 días), ajustado con el inventario en sistema. Días contados al {hoy:%d/%m/%Y}. Usa las flechas de los títulos para filtrar."
+  ws['A2'] = f"Último conteo de cada producto por sucursal (últimos 2 meses), ajustado con el inventario en sistema. Los críticos (≤30 días) con conteo de hace más de 7 días se marcan para recontar. Días contados al {hoy:%d/%m/%Y}. Usa las flechas de los títulos para filtrar."
   ws['A2'].font = Font(name=FONT, size=9, italic=True, color='5A4F50')
   cols = ['Unidad', 'Zona', 'Sucursal', 'Marca', 'Código', 'Producto', 'Inv. al conteo (u)', 'Inv. sistema hoy (u)', 'Reportado (u)', 'Por vencer ajustado (u)', 'Vencimiento', 'Días para vencer', 'Estado', 'Acción', 'Colaborador', 'Fecha del conteo', 'Días desde el conteo', 'Nuevo ayer']
   ws.append([]); ws.append(cols)
@@ -80,16 +82,16 @@ def libro(dst):
   for col, w in zip('ABCDEFGHIJKLMNOPQR', [17, 10, 24, 18, 14, 40, 10, 11, 10, 12, 12, 10, 13, 34, 18, 16, 10, 9]): ws.column_dimensions[col].width = w
   ws.conditional_formatting.add(f'N5:N{last}', FormulaRule(formula=['LEFT($N5,7)="Retirar"'], font=Font(color='B42828', bold=True)))
   ws.conditional_formatting.add(f'N5:N{last}', FormulaRule(formula=['LEFT($N5,8)="Recontar"'], font=Font(color='8A5A00', bold=True)))
-  ws.conditional_formatting.add(f'Q5:Q{last}', CellIsRule(operator='greaterThan', formula=['7'], fill=PatternFill('solid', fgColor='FDF1D4')))
+  ws.conditional_formatting.add(f'Q5:Q{last}', FormulaRule(formula=['AND($Q5>7,$L5<=30)'], fill=PatternFill('solid', fgColor='FDF1D4')))
   ws.freeze_panes = 'D5'
   # ---------- Resumen por sucursal
   rs = wb.create_sheet('Resumen por sucursal')
-  rs['A1'] = f"Avance de la semana {iw} y unidades por vencer · cierre al {cierre:%d/%m/%Y}"; rs['A1'].font = Font(name=FONT, bold=True, size=13)
-  rc = ['Unidad', 'Zona', 'Sucursal', 'SKU con inventario', 'Revisados semana', '% avance', 'SKU con vencimiento', 'Vencido (u)', '≤30 días (u)', '31–60 días (u)', '61+ días (u)', 'Último registro', 'Registró']
+  rs['A1'] = f"Avance del mes de {mes_txt} y unidades por vencer · cierre al {cierre:%d/%m/%Y}"; rs['A1'].font = Font(name=FONT, bold=True, size=13)
+  rc = ['Unidad', 'Zona', 'Sucursal', 'SKU con inventario', 'Revisados mes', '% avance', 'SKU con vencimiento', 'Vencido (u)', '≤30 días (u)', '31–60 días (u)', '61+ días (u)', 'Último registro', 'Registró']
   rs.append([]); rs.append(rc)
   tot = {'lotes': 0, 'crit': 0}
   for i in sorted(sucs, key=lambda i: (D['s'][i][0], D['s'][i][1], D['s'][i][2])):
-    s = D['s'][i]; a = datos['avance'].get(f'{semana}|{s[2]}', {})
+    s = D['s'][i]; a = datos['avance'].get(f'{mes}|{s[2]}', {})
     ll = [l for l in L if l['suc'] == s[2]]; b = [sum(l['u'] for l in ll if c(l['dias'])) for c in (lambda d: d < 0, lambda d: 0 <= d <= 30, lambda d: 31 <= d <= 60, lambda d: d > 60)]
     rev = a.get('n', 0) + a.get('e', 0); r = rs.max_row + 1
     rs.append([s[0], corto(s[1]), corto(s[2]), len(D['i'][i]) // 2, rev, f'=IFERROR(E{r}/D{r},0)', len({l['cod'] for l in ll}), *b,
@@ -111,4 +113,4 @@ def libro(dst):
           'nuevos_ayer': sum(1 for l in L if l['nuevo'])}
 
 res = [libro(d) for d in json.load(open(dest, encoding='utf-8'))]
-print(json.dumps({'cierre': cierre.isoformat(), 'semana': semana, 'destinatarios': res}, ensure_ascii=False))
+print(json.dumps({'cierre': cierre.isoformat(), 'mes': mes, 'destinatarios': res}, ensure_ascii=False))
