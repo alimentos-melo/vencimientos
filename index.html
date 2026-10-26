@@ -1,6 +1,4 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
-
-<title>Vencimientos en Tienda</title>
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Vencimientos en Tienda</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -162,6 +160,7 @@ body.searching .list{margin-top:4px}
 .mini-bar i{display:block;height:100%;background:var(--good)}
 .st.full{background:var(--good-bg);color:var(--good)}
 .st.cola{background:var(--mid-bg);color:var(--mid)}
+.st.rc{background:var(--crit-bg,#F8E0E0);color:var(--crit,#B42828)}
 .bulk{display:grid;gap:10px;background:var(--surface);border:1px dashed var(--accent);border-radius:12px;padding:12px 14px;margin:2px 0 14px}
 .bulk b{font-family:var(--display);font-size:16px}.bulk p{margin:2px 0 0}
 .bulk-b{display:grid;grid-template-columns:1fr 1fr;gap:8px}.bulk-b .btn{font-size:14px;padding:11px 10px}
@@ -266,7 +265,7 @@ body.searching .list{margin-top:4px}
     <div id="regView">
     <div class="tools">
       <div class="prog">
-        <div class="prog-row"><span><b class="num" id="pRev">0</b> <span class="mu">de <span class="num" id="pTot">0</span> productos <span id="pScope">de la tienda</span> revisados esta semana</span></span><span class="mu num" id="pEnv"></span></div>
+        <div class="prog-row"><span><b class="num" id="pRev">0</b> <span class="mu">de <span class="num" id="pTot">0</span> productos <span id="pScope">de la tienda</span> revisados este mes</span></span><span class="mu num" id="pEnv"></span></div>
         <div class="bar" aria-hidden="true"><i class="b1" id="barE"></i><i class="b2" id="barO"></i></div>
         <p class="sync" id="syncI" hidden></p>
       </div>
@@ -323,7 +322,7 @@ const fmtD = d => d.split('-').reverse().join('/');
 const store = { get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } },
                 set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} } };
 
-/* Semana ISO: los reportes de "revisado" se reinician cada lunes */
+/* Ciclo mensual: lo "revisado" se reinicia el día 1 de cada mes. Los críticos (vencidos o ≤30 días) piden reconteo si su conteo tiene más de 7 días. */
 function isoWeek(d){ const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day);
   const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return [t.getUTCFullYear(), Math.ceil(((t - y0) / 864e5 + 1) / 7)]; }
 const NOW = new Date(); const [WY, WN] = isoWeek(NOW);
@@ -341,7 +340,7 @@ const monOpts = d => '<option value="">Mes / año</option>' + VMESES.map(m => `<
 const dayOpts = (d, last, sel) => { const n = last || (d ? new Date(+d.slice(0, 4), +d.slice(5, 7), 0).getDate() : 31), s = sel || (d ? d.slice(8, 10) : '');
   let h = '<option value="">Día</option>'; for (let i = 1; i <= n; i++){ const v = String(i).padStart(2, '0'); h += `<option value="${v}" ${v===s ? 'selected' : ''}>${v}</option>`; } return h; };
 const VENTANA = `${MESES[NOW.getMonth()]} a ${MESES[(NOW.getMonth() + 3) % 12]}`;
-$('#wk').textContent = `Semana ${WN}`; $('#howV').textContent = VENTANA; $('#fInv').textContent = D.f.replace(/\./g, '/');
+$('#wk').textContent = MESES[NOW.getMonth()].charAt(0).toUpperCase() + MESES[NOW.getMonth()].slice(1); $('#howV').textContent = VENTANA; $('#fInv').textContent = D.f.replace(/\./g, '/');
 
 let cfg = store.get('venc-cfg', {}); let sel = { u: '', z: '', s: '' };
 /* ---------- Acceso por correo autorizado ----------
@@ -373,8 +372,11 @@ $('#fMail').onkeydown = e => { if (e.key==='Enter'){ e.preventDefault(); $('#log
 /* La sucursal se recuerda por nombre (los datos se actualizan a diario y su posición en la lista puede cambiar) */
 if (cfg.sn){ const k = D.s.findIndex(x => x[2]===cfg.sn); cfg.s = k >= 0 ? k : -1; } else if (D.s[cfg.s]) { cfg.sn = D.s[cfg.s][2]; store.set('venc-cfg', cfg); }
 let all = [], items = [], done = {}, fEstado = 'pend', fSec = '', shown = 60, fMarca = null;
-const doneKey = () => `venc-done2-${cfg.sn}-${WY}-${WN}`;
-const SEM = `${WY}-S${String(WN).padStart(2, '0')}`;
+const SEM = `${NOW.getFullYear()}-${String(NOW.getMonth() + 1).padStart(2, '0')}`;   /* periodo mensual, ej. 2026-10 */
+const doneKey = () => `venc-done3-${cfg.sn}-${SEM}`;
+const RC_DIAS = 7;   /* un crítico se vuelve a contar si su último conteo tiene más de 7 días */
+const esCrit = l => (l || []).some(x => daysTo(Array.isArray(x) ? x[1] : x.d) <= 30);
+const recontar = c => { const d = done[c]; return !!d && d.s==='env' && esCrit(d.l) && d.t && (Date.now() - d.t) > RC_DIAS * 864e5; };
 
 /* ---------- Paso inicial ---------- */
 function setupView(){
@@ -457,8 +459,7 @@ function mainView(){
   for (let k = 0; k < a.length; k += 2){ const p = D.p[a[k]]; all.push({ pi: a[k], u: a[k+1], cod: p[0], desc: p[1], casa: p[2], sec: p[3], m: p[4], key: norm(p[0] + ' ' + p[1]) }); }
   done = store.get(doneKey(), null);
   if (!done){ /* migra lo guardado con la versión anterior (por posición) */
-    const old = store.get(`venc-done-${cfg.s}-${WY}-${WN}`, {}); done = {};
-    for (const k in old){ const p = D.p[+k]; if (p) done[p[0]] = typeof old[k]==='string' ? { s: old[k], l: [] } : old[k]; }
+    done = {};   /* el avance del mes llega del servicio central al abrir (pull) */
   }
   fMarca = null; $('#q').value = '';
   showTab('reg'); brandView(); renderSync(); pull();
@@ -478,15 +479,15 @@ function pickBrand(m){
 $('#brandChg').onclick = brandView;
 function renderBrands(){
   const q = norm($('#q').value.trim()), by = new Map();
-  for (const it of all){ const b = by.get(it.m) || { n: 0, r: 0, p: 0 }; b.n++; const st = ST(it.pi); if (st) b.r++; if (st==='pend') b.p++; by.set(it.m, b); }
+  for (const it of all){ const b = by.get(it.m) || { n: 0, r: 0, p: 0, rc: 0 }; b.n++; const st = ST(it.pi); if (st) b.r++; if (st==='pend') b.p++; if (recontar(it.cod)) b.rc++; by.set(it.m, b); }
   const list = [...by.entries()].filter(([m]) => !q || norm(D.m[m]).includes(q)).sort((a, b) => D.m[a[0]].localeCompare(D.m[b[0]], 'es'));
   $('#list').innerHTML = list.length ? list.map(([m, b]) => `<button class="item bitem" data-m="${m}">
-      <span class="d">${esc(D.m[m])}${b.p ? `<span class="st cola">${b.p} por enviar</span>` : b.r===b.n ? '<span class="st full">Completa</span>' : ''}</span>
+      <span class="d">${esc(D.m[m])}${b.rc ? `<span class="st rc">${b.rc} por recontar</span>` : b.r===b.n ? '<span class="st full">Completa</span>' : ''}</span>
       <span class="mini-bar" aria-hidden="true"><i style="width:${b.r / b.n * 100}%"></i></span>
       <span class="q"><b class="num">${b.n - b.r}</b><span>${b.r ? `de ${b.n} pendientes` : `producto${b.n>1?'s':''}`}</span></span></button>`).join('')
     : '<div class="empty">No hay una marca con ese nombre en tu tienda.</div>';
 }
-function stats(){ const c = { pend: 0, env: 0, no: 0 }; for (const it of items){ const st = ST(it.pi); if (st) c[st]++; } return c; }
+function stats(){ const c = { pend: 0, env: 0, no: 0, rc: 0 }; for (const it of items){ const st = ST(it.pi); if (st) c[st]++; if (recontar(it.cod)) c.rc++; } return c; }
 function renderProg(){
   const c = stats(), t = items.length, e = c.pend + c.env;
   $('#pRev').textContent = e + c.no; $('#pTot').textContent = t; $('#pEnv').textContent = e ? `${e} con vencimiento` : '';
@@ -495,7 +496,8 @@ function renderProg(){
 }
 function renderChips(){
   renderProg(); const c = stats(), t = items.length;
-  const est = [['pend','Pendientes', t - c.pend - c.env - c.no], ['env','Con vencimiento', c.env], ['no','Sin vencimiento', c.no], ['all','Todos', t]];
+  const est = [...(c.rc ? [['rc','Recontar', c.rc]] : []), ['pend','Pendientes', t - c.pend - c.env - c.no], ['env','Con vencimiento', c.env], ['no','Sin vencimiento', c.no], ['all','Todos', t]];
+  if (fEstado==='rc' && !c.rc) fEstado = 'pend';
   $('#estados').innerHTML = est.map(([k, l, n]) => `<button class="chip" aria-pressed="${k===fEstado}" data-e="${k}">${l}<span class="n num">${n}</span></button>`).join('');
   const secs = [...new Set(items.map(i => i.sec))];
   $('#secs').innerHTML = `<button class="chip" aria-pressed="${!fSec}" data-s="">Todas las secciones</button>` + secs.map(s => `<button class="chip" aria-pressed="${s===fSec}" data-s="${s}">${s.charAt(0) + s.slice(1).toLowerCase()}</button>`).join('');
@@ -521,7 +523,7 @@ function filtered(){
   return items.filter(it => {
     const st = ST(it.pi);
     if (q.length) return q.every(w => it.key.includes(w));   /* al buscar se busca en todos los productos de la marca, sin filtros ocultos */
-    if (fEstado==='pend' && st) return false; if (fEstado==='cola' && st!=='pend') return false;
+    if (fEstado==='pend' && st) return false; if (fEstado==='cola' && st!=='pend') return false; if (fEstado==='rc' && !recontar(it.cod)) return false;
     if (fEstado==='env' && st!=='env') return false; if (fEstado==='no' && st!=='no') return false;
     if (fSec && it.sec!==fSec) return false;
     return q.every(w => it.key.includes(w));
@@ -532,8 +534,8 @@ function renderList(){
   const f = filtered(), el = $('#list');
   if (!f.length){
     const c = stats();
-    el.innerHTML = `<div class="empty">${fEstado==='pend' && !$('#q').value ? `Revisaste todos los productos de ${esc(D.m[fMarca])}${fSec ? ' en esta sección' : ''} esta semana. Toca "Cambiar marca" para seguir con otra.` : 'No hay productos con ese filtro. Prueba con otro nombre o con "Todos".'}</div>`; return; }
-  el.innerHTML = f.slice(0, shown).map(it => `<button class="item" data-pi="${it.pi}"><span class="d">${esc(it.desc)}${tag(ST(it.pi))}</span>
+    el.innerHTML = `<div class="empty">${fEstado==='pend' && !$('#q').value ? `Revisaste todos los productos de ${esc(D.m[fMarca])}${fSec ? ' en esta sección' : ''} este mes. Toca "Cambiar marca" para seguir con otra.` : 'No hay productos con ese filtro. Prueba con otro nombre o con "Todos".'}</div>`; return; }
+  el.innerHTML = f.slice(0, shown).map(it => `<button class="item" data-pi="${it.pi}"><span class="d">${esc(it.desc)}${recontar(it.cod) ? '<span class="st rc">Recontar</span>' : tag(ST(it.pi))}</span>
       <span class="c num">${it.cod} · ${esc(it.casa)}</span><span class="q"><b class="num">${it.u}</b><span>en sistema</span></span></button>`).join('')
     + (f.length > shown ? `<div class="more"><button class="btn ghost" id="moreBtn">Mostrar ${Math.min(60, f.length - shown)} más de ${f.length - shown}</button></div>` : '');
   const mb = $('#moreBtn'); if (mb) mb.onclick = () => { shown += 60; renderList(); };
@@ -578,7 +580,8 @@ function drawSheet(){
   const prevTxt = !prev ? '' : prev.s==='no' ? 'sin vencimiento' : 'con vencimiento';
   el.innerHTML = head + `
     <div class="stock"><div><span class="lbl">Tu tienda tiene en sistema</span><div class="mu">al ${D.f.replace(/\./g,'/')}</div></div><b class="num">${it.u} u</b></div>
-    ${prev ? `<div class="note ${prev.s==='no'?'ok':''}">Esta semana ya lo marcaste como <b>${prevTxt}</b>. Puedes corregirlo.</div>` : ''}
+    ${prev && recontar(it.cod) ? `<div class="note"><b>Vuelve a contarlo:</b> vence pronto y su último conteo fue hace ${Math.floor((Date.now() - prev.t) / 864e5)} días. Revisa cuántas unidades quedan y guarda de nuevo.</div>`
+      : prev ? `<div class="note ${prev.s==='no'?'ok':''}">Este mes ya lo marcaste como <b>${prevTxt}</b>. Puedes corregirlo.</div>` : ''}
     <div class="ask">¿Hay unidades que vencen entre el ${fmtD(MIND)} y el ${fmtD(MAXD)}?</div>
     <div class="yn"><button class="no" id="aNo" aria-pressed="${cur.ans==='no'}">No<small>Nada vence de ${VENTANA}</small></button>
       <button class="si" id="aSi" aria-pressed="${cur.ans==='si'}">Sí<small>Hay unidades por vencer</small></button></div>
@@ -802,7 +805,7 @@ function showUpload(res){
 }
 /* ---------- Sincronización con el servicio central ----------
    Cada cambio se guarda en el teléfono y se envía al servicio; lo que no se pudo enviar queda en cola y se reintenta.
-   Al abrir una sucursal se descarga su avance de la semana, sin importar en qué equipo se registró. */
+   Al abrir una sucursal se descarga su avance del mes, sin importar en qué equipo se registró. */
 let syncI = { t: null, err: false, quien: '' }, flushing = false;
 const qKey = () => `venc-q-${cfg.sn}-${SEM}`;
 const hhmm = d => d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '';
@@ -842,7 +845,7 @@ async function pull(){
     } else {
       const nd = {};
       (st.n || []).forEach(c => nd[c] = { s: 'no' });
-      for (const c in (st.e || {})){ const e = st.e[c]; nd[c] = { s: e.s, l: (e.l || []).map(x => ({ q: x[0], d: x[1] })) }; }
+      for (const c in (st.e || {})){ const e = st.e[c]; nd[c] = { s: e.s, l: (e.l || []).map(x => ({ q: x[0], d: x[1] })), t: e.t }; }
       for (const c in q){ if (done[c]) nd[c] = done[c]; else delete nd[c]; }   /* lo que falta enviar desde aquí manda */
       done = nd; save();
     }
@@ -893,20 +896,20 @@ async function loadDiag(){
 }
 /* Estado de una sucursal: la actual usa lo de este teléfono (más reciente); las demás, lo del servicio */
 function stateOf(si){
-  if (si===cfg.s){ const n = [], e = {}; for (const c in done){ const d = done[c]; if (d.s==='no') n.push(c); else if (d.s) e[c] = { s: d.s, l: (d.l || []).map(x => [x.q, x.d]) }; } return { n, e, act: syncI.t, quien: '' }; }
+  if (si===cfg.s){ const n = [], e = {}; for (const c in done){ const d = done[c]; if (d.s==='no') n.push(c); else if (d.s) e[c] = { s: d.s, l: (d.l || []).map(x => [x.q, x.d]), t: d.t }; } return { n, e, act: syncI.t, quien: '' }; }
   const x = dgData && dgData[D.s[si][2]]; return x ? { n: x.st.n || [], e: x.st.e || {}, act: x.act ? new Date(x.act) : null, quien: x.quien || '' } : { n: [], e: {}, act: null, quien: '' };
 }
 function summary(si){
   const a = D.i[si], codes = new Map(); for (let k = 0; k < a.length; k += 2) codes.set(D.p[a[k]][0], a[k]);
   const st = stateOf(si), b = { venc: 0, c30: 0, c60: 0, c90: 0 }, lots = [], brands = new Map();
-  let rev = 0, conV = 0, pend = 0, env = 0;
+  let rev = 0, conV = 0, pend = 0, env = 0, rc = 0;
   for (const [c, pi] of codes){ const m = D.p[pi][4]; const x = brands.get(m) || { t: 0, r: 0 }; x.t++; brands.set(m, x); }
   st.n.forEach(c => { if (codes.has(c)){ rev++; brands.get(D.p[codes.get(c)][4]).r++; } });
   for (const c in st.e){ if (!codes.has(c)) continue; const e = st.e[c], pi = codes.get(c);
-    rev++; conV++; e.s==='env' ? env++ : pend++; brands.get(D.p[pi][4]).r++;
+    rev++; conV++; e.s==='env' ? env++ : pend++; brands.get(D.p[pi][4]).r++; if (esCrit(e.l) && e.t && (Date.now() - e.t) > RC_DIAS * 864e5) rc++;
     (e.l || []).forEach(([q, d]) => { const n = daysTo(d); if (n < 0) b.venc += q; else if (n <= 30) b.c30 += q; else if (n <= 60) b.c60 += q; else b.c90 += q; lots.push({ pi, q, d, n }); }); }
   lots.sort((x, y) => x.d.localeCompare(y.d));
-  return { tot: codes.size, rev, conV, pend, env, b, lots, brands, act: st.act, quien: st.quien };
+  return { tot: codes.size, rev, conV, pend, env, rc, b, lots, brands, act: st.act, quien: st.quien };
 }
 const pct = (a, b) => { if (!b) return 0; const v = a / b * 100; return a && v < 1 ? '<1' : Math.round(v); };
 const bandHtml = b => `<div class="dg-band">
@@ -920,23 +923,24 @@ function renderDiag(){
     const S = mine.map(si => ({ si, ...summary(si) })), T = S.reduce((a, x) => ({ tot: a.tot + x.tot, rev: a.rev + x.rev, conV: a.conV + x.conV, ini: a.ini + (x.rev ? 1 : 0),
       b: { venc: a.b.venc + x.b.venc, c30: a.b.c30 + x.b.c30, c60: a.b.c60 + x.b.c60, c90: a.b.c90 + x.b.c90 } }), { tot: 0, rev: 0, conV: 0, ini: 0, b: { venc: 0, c30: 0, c60: 0, c90: 0 } });
     S.sort((x, y) => (x.tot ? x.rev / x.tot : 0) - (y.tot ? y.rev / y.tot : 0));
-    el.innerHTML = `${note}<div class="dg-card"><h3>Tus ${mine.length} sucursales · semana ${WN}</h3>
+    el.innerHTML = `${note}<div class="dg-card"><h3>Tus ${mine.length} sucursales · ${MESES[NOW.getMonth()]}</h3>
       <div class="dg-kpis"><div><b class="num">${pct(T.rev, T.tot)}%</b><span>avance</span></div><div><b class="num">${T.ini}/${mine.length}</b><span>tiendas iniciadas</span></div><div><b class="num">${T.conV}</b><span>SKU con vencimiento</span></div></div>
       <span class="lbl">Unidades por vencer</span>${bandHtml(T.b)}</div>
       <div class="dg-card"><span class="lbl">Avance por sucursal · menor avance primero</span><div>${S.map(x => `<button class="dg-row" data-si="${x.si}">
         <span class="n">${esc(sLabel(D.s[x.si][2]))}</span><span class="v num">${pct(x.rev, x.tot)}%</span>
         <span class="bar" aria-hidden="true"><i class="b1" style="width:${x.tot ? x.conV / x.tot * 100 : 0}%"></i><i class="b2" style="width:${x.tot ? (x.rev - x.conV) / x.tot * 100 : 0}%"></i></span>
-        <span class="s">${x.rev} de ${x.tot} revisados · ${x.conV} con vencimiento · ${x.b.venc + x.b.c30} u críticas${x.act ? ` · ${x.act.toLocaleDateString('es-PA', { day: '2-digit', month: '2-digit' })} ${hhmm(x.act)}` : ' · sin registros'}</span></button>`).join('')}</div></div>`;
+        <span class="s">${x.rev} de ${x.tot} revisados · ${x.conV} con vencimiento · ${x.b.venc + x.b.c30} u críticas${x.rc ? ` · ${x.rc} por recontar` : ''}${x.act ? ` · ${x.act.toLocaleDateString('es-PA', { day: '2-digit', month: '2-digit' })} ${hhmm(x.act)}` : ' · sin registros'}</span></button>`).join('')}</div></div>`;
     el.querySelectorAll('.dg-row').forEach(b => b.onclick = () => { dgSel = +b.dataset.si; renderDiag(); window.scrollTo(0, 0); });
     return;
   }
   const si = multi ? dgSel : cfg.s, x = summary(si);
   const br = [...x.brands.entries()].map(([m, v]) => ({ m, ...v })).sort((a, b) => (a.r / a.t) - (b.r / b.t) || b.t - a.t);
   el.innerHTML = `${note}${multi ? '<button class="dg-back" id="dgBack">← Todas mis sucursales</button>' : ''}
-    <div class="dg-card"><h3>${esc(sLabel(D.s[si][2]))} · semana ${WN}</h3>
+    <div class="dg-card"><h3>${esc(sLabel(D.s[si][2]))} · ${MESES[NOW.getMonth()]}</h3>
       <div class="dg-kpis"><div><b class="num">${pct(x.rev, x.tot)}%</b><span>${x.rev} de ${x.tot} revisados</span></div><div><b class="num">${x.conV}</b><span>con vencimiento</span></div><div><b class="num">${x.b.venc + x.b.c30}</b><span>u críticas</span></div></div>
       <div class="bar" aria-hidden="true"><i class="b1" style="width:${x.tot ? x.conV / x.tot * 100 : 0}%"></i><i class="b2" style="width:${x.tot ? (x.rev - x.conV) / x.tot * 100 : 0}%"></i></div>
       <span class="lbl">Unidades por vencer</span>${bandHtml(x.b)}
+      ${x.rc ? `<div class="note"><b>${x.rc} producto${x.rc > 1 ? 's' : ''} crítico${x.rc > 1 ? 's' : ''} por recontar</b>: vencen en 30 días o menos y su conteo tiene más de ${RC_DIAS} días. Búscalos con el filtro "Recontar" en cada marca.</div>` : ''}
       <p class="mu" style="margin:0">${x.act ? `Última actualización ${x.act.toLocaleDateString('es-PA', { day: '2-digit', month: '2-digit' })} ${hhmm(x.act)}` : ''}${x.quien ? ` por ${esc(x.quien)}` : ''}</p></div>
     <div class="dg-card"><span class="lbl">Próximos a vencer</span>${x.lots.length ? `<div>${x.lots.slice(0, 25).map(l => { const [c] = band(l.n); return `<div class="dg-lot"><span class="d">${esc(D.p[l.pi][1])}<br><span class="mu">${esc(D.m[D.p[l.pi][4]])} · ${D.p[l.pi][0]}</span></span><span class="num" style="text-align:right;white-space:nowrap"><b>${l.q} u</b><br>${fmtD(l.d)} <span class="pill ${c}">${l.n < 0 ? 'vencido' : l.n + ' d'}</span></span></div>`; }).join('')}</div>${x.lots.length > 25 ? `<p class="mu" style="margin:0">y ${x.lots.length - 25} lotes más.</p>` : ''}` : '<p class="mu" style="margin:0">Todavía no hay vencimientos reportados esta semana.</p>'}</div>
     <div class="dg-card"><span class="lbl">Avance por marca · menor avance primero</span><div>${br.map(b => `<div class="dg-row"><span class="n">${esc(D.m[b.m])}</span><span class="v num">${b.r}/${b.t}</span><span class="bar" aria-hidden="true"><i class="b2" style="width:${b.r / b.t * 100}%"></i></span></div>`).join('')}</div></div>`;
@@ -955,6 +959,4 @@ let tt; function toast(m){ const t = $('#toast'); t.textContent = m; t.hidden = 
   (D.s[cfg.s] && cfg.nombre && okS(cfg.s)) ? mainView() : setupView();
 })();
 </script>
-
-
 </body></html>
