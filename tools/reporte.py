@@ -18,6 +18,9 @@ page = open(app, encoding='utf-8').read()
 D = json.JSONDecoder().raw_decode(page[page.index('const D = ') + 10:])[0]
 datos = json.load(open(src, encoding='utf-8')) if src != '-' else {'cierre': (dt.date.today() - dt.timedelta(days=1)).isoformat(), 'filas': [], 'avance': {}}
 cierre = dt.date.fromisoformat(datos['cierre']); hoy = cierre + dt.timedelta(days=1)
+# El domingo no se envía reporte: el del lunes (cierre del domingo) cuenta como nuevos lo registrado el sábado y el domingo
+desde = cierre - dt.timedelta(days=1) if cierre.weekday() == 6 else cierre
+nuevo_txt = 'Nuevo sáb-dom' if cierre.weekday() == 6 else 'Nuevo ayer'
 MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
 mes = f'{cierre.year}-M{cierre.month:02d}'; mes_txt = MESES[cierre.month - 1]   # periodo mensual del aplicativo (texto, ej. 2026-M10)
 corto = lambda s: re.sub(r'^[^|]+\| ', '', s)
@@ -42,7 +45,7 @@ for (suc, cod), fs in grupos.items():
     ajust = min(ajust, quedan_max); quedan_max -= ajust                       # nunca más de lo que hay hoy en sistema
     reg = dt.datetime.fromisoformat(f[13]); edad = (hoy - reg.date()).days
     lotes.append({'suc': suc, 'marca': f[4], 'cod': cod, 'prod': f[6], 'inv': inv_conteo, 'inv_hoy': hoy_u, 'rep': f[9], 'u': ajust, 'v': v, 'dias': dias,
-                  'col': f[11], 'reg': reg, 'edad': edad, 'nuevo': f[13][:10] == cierre.isoformat()})
+                  'col': f[11], 'reg': reg, 'edad': edad, 'nuevo': desde.isoformat() <= f[13][:10] <= cierre.isoformat()})
 def accion(l):
   if l['u'] == 0: return 'Ya no hay unidades (vendido o retirado)'
   if l['dias'] < 0: return 'Retirar del anaquel y registrar merma'
@@ -64,7 +67,7 @@ def libro(dst):
   ws['A1'] = f"Vencimientos en tienda · {dst['nombre']} · cierre al {cierre:%d/%m/%Y}"; ws['A1'].font = Font(name=FONT, bold=True, size=13)
   ws['A2'] = f"Último conteo de cada producto por sucursal (últimos 2 meses), ajustado con el inventario en sistema. Los críticos (≤30 días) con conteo de hace más de 7 días se marcan para recontar. Días contados al {hoy:%d/%m/%Y}. Usa las flechas de los títulos para filtrar."
   ws['A2'].font = Font(name=FONT, size=9, italic=True, color='5A4F50')
-  cols = ['Unidad', 'Zona', 'Sucursal', 'Marca', 'Código', 'Producto', 'Inv. al conteo (u)', 'Inv. sistema hoy (u)', 'Reportado (u)', 'Por vencer ajustado (u)', 'Vencimiento', 'Días para vencer', 'Estado', 'Acción', 'Colaborador', 'Fecha del conteo', 'Días desde el conteo', 'Nuevo ayer']
+  cols = ['Unidad', 'Zona', 'Sucursal', 'Marca', 'Código', 'Producto', 'Inv. al conteo (u)', 'Inv. sistema hoy (u)', 'Reportado (u)', 'Por vencer ajustado (u)', 'Vencimiento', 'Días para vencer', 'Estado', 'Acción', 'Colaborador', 'Fecha del conteo', 'Días desde el conteo', nuevo_txt]
   ws.append([]); ws.append(cols)
   for l in L:
     s = D['s'][names[l['suc']]]
